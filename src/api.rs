@@ -26,6 +26,7 @@ pub async fn run(cfg: Config, db: db::Database) -> Result<()> {
 		.route("/users/names", get(list_user_names))
 		.route("/handshakes", post(create_handshake))
 		.route("/handshakes/count", get(count_handshakes))
+		.route("/handshakes/count/user", get(count_handshakes_for_user))
 		.with_state(AppState { token: cfg.token, db });
 
 	let listener = TcpListener::bind(cfg.api).await?;
@@ -112,18 +113,35 @@ async fn count_handshakes(_session: Session, State(db): State<db::Database>) -> 
 	Ok(count.to_string())
 }
 
+/// Returns the number of handshakes that a specific user has performed
+#[tracing::instrument(level = "debug", skip(_session, db))]
+async fn count_handshakes_for_user(
+	_session: Session,
+	State(db): State<db::Database>,
+	Query(info): Query<db::UserResoniteInfo>,
+) -> Result<String, Error> {
+	let user = db.get_user_by_resonite_info(&info).await?.ok_or(Error::NotFound)?;
+	Ok(db.count_user_handshakes(user.id).await?.to_string())
+}
+
 /// Error type returned from handlers
 #[derive(Debug)]
-pub struct Error(anyhow::Error);
+pub enum Error {
+	Internal(anyhow::Error),
+	NotFound,
+}
 
 impl IntoResponse for Error {
 	fn into_response(self) -> Response {
-		(StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
+		match self {
+			Self::Internal(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+			Self::NotFound => (StatusCode::NOT_FOUND, "no record found").into_response(),
+		}
 	}
 }
 
 impl<E: Into<anyhow::Error>> From<E> for Error {
 	fn from(err: E) -> Self {
-		Self(err.into())
+		Self::Internal(err.into())
 	}
 }

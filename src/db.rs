@@ -63,12 +63,12 @@ impl Database {
 	/// Retrieves a single user record by its Resonite ID if it exists. If no record is found, it is instead retrieved
 	/// by its Resonite username. If that also fails, then no record is returned.
 	#[tracing::instrument("Database::get_user_by_resonite_info", level = "debug", skip(self))]
-	pub async fn get_user_by_resonite_info(&self, id: &str, name: &str) -> Result<Option<User>> {
+	pub async fn get_user_by_resonite_info(&self, info: &UserResoniteInfo) -> Result<Option<User>> {
 		// Retrieve the user by its Resonite ID if it's provided
-		let user = if let Some(user) = self.get_user_by_resonite_id(id).await? {
+		let user = if let Some(user) = self.get_user_by_resonite_id(&info.id).await? {
 			Some(user)
 		} else {
-			self.get_user_by_resonite_name(name).await?
+			self.get_user_by_resonite_name(&info.name).await?
 		};
 
 		Ok(user)
@@ -92,12 +92,12 @@ impl Database {
 
 	/// Stores a new user
 	#[tracing::instrument("Creating user", level = "info", skip(self))]
-	pub async fn create_user(&self, resonite_id: &str, resonite_name: &str) -> Result<User> {
+	pub async fn create_user(&self, info: &UserResoniteInfo) -> Result<User> {
 		// Create the user record
 		let id = sqlx::query!(
 			"INSERT INTO users (resonite_id, resonite_name) VALUES (?1, ?2)",
-			resonite_id,
-			resonite_name
+			info.id,
+			info.name
 		)
 		.execute(&self.pool)
 		.await?
@@ -152,16 +152,21 @@ impl Database {
 	/// Stores a new handshake, creating/updating its corresponding user if necessary
 	#[tracing::instrument("Creating handshake", level = "info", skip(self))]
 	pub async fn create_handshake(&self, shake: HandshakeContext) -> Result<Handshake> {
+		let info = UserResoniteInfo {
+			id: shake.id,
+			name: shake.name,
+		};
+
 		// Retrieve the corresponding user and update it if necessary, or create it if it doesn't already exist
-		let user = if let Some(mut user) = self.get_user_by_resonite_info(&shake.id, &shake.name).await? {
-			if user.resonite_id.is_none() || user.resonite_name != shake.name {
-				user.resonite_id = Some(shake.id);
-				user.resonite_name = shake.name;
+		let user = if let Some(mut user) = self.get_user_by_resonite_info(&info).await? {
+			if user.resonite_id.is_none() || user.resonite_name != info.name {
+				user.resonite_id = Some(info.id);
+				user.resonite_name = info.name;
 				self.update_user(&user).await?;
 			}
 			user
 		} else {
-			self.create_user(&shake.id, &shake.name).await?
+			self.create_user(&info).await?
 		};
 
 		// Create the handshake record
@@ -249,4 +254,14 @@ pub struct HandshakeContext {
 
 	/// Name of the Resonite world the handshake is taking place in
 	pub world: String,
+}
+
+/// Resonite user information
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserResoniteInfo {
+	/// Resonite ID of the user
+	pub id: String,
+
+	/// Resonite username of the user
+	pub name: String,
 }
