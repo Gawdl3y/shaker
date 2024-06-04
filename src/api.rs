@@ -3,6 +3,7 @@ use axum::{
 	async_trait,
 	extract::{Form, FromRef, FromRequestParts, Query, State},
 	http::{request::Parts, StatusCode},
+	response::{IntoResponse, Response},
 	routing::{get, post},
 	Router,
 };
@@ -81,21 +82,15 @@ impl FromRequestParts<AppState> for Session {
 
 /// Returns the number of unique users that have shaken hands
 #[tracing::instrument(level = "debug", skip(_session, db))]
-async fn count_users(_session: Session, State(db): State<db::Database>) -> Result<String, (StatusCode, String)> {
-	let count = db
-		.count_users()
-		.await
-		.map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+async fn count_users(_session: Session, State(db): State<db::Database>) -> Result<String, Error> {
+	let count = db.count_users().await?;
 	Ok(count.to_string())
 }
 
 /// Returns a newline-delimited list of the usernames of all unique users that have shaken hands
 #[tracing::instrument(level = "debug", skip(_session, db))]
-async fn list_user_names(_session: Session, State(db): State<db::Database>) -> Result<String, (StatusCode, String)> {
-	let names = db
-		.get_all_user_resonite_names()
-		.await
-		.map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+async fn list_user_names(_session: Session, State(db): State<db::Database>) -> Result<String, Error> {
+	let names = db.get_all_user_resonite_names().await?;
 	Ok(names.join("\n"))
 }
 
@@ -105,20 +100,30 @@ async fn create_handshake(
 	_session: Session,
 	State(db): State<db::Database>,
 	Form(shake): Form<db::HandshakeContext>,
-) -> Result<Form<db::Handshake>, (StatusCode, String)> {
-	let created = db
-		.create_handshake(shake)
-		.await
-		.map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+) -> Result<Form<db::Handshake>, Error> {
+	let created = db.create_handshake(shake).await?;
 	Ok(Form(created))
 }
 
 /// Returns the total number of handshakes that have occurred
 #[tracing::instrument(level = "debug", skip(_session, db))]
-async fn count_handshakes(_session: Session, State(db): State<db::Database>) -> Result<String, (StatusCode, String)> {
-	let count = db
-		.count_handshakes()
-		.await
-		.map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+async fn count_handshakes(_session: Session, State(db): State<db::Database>) -> Result<String, Error> {
+	let count = db.count_handshakes().await?;
 	Ok(count.to_string())
+}
+
+/// Error type returned from handlers
+#[derive(Debug)]
+pub struct Error(anyhow::Error);
+
+impl IntoResponse for Error {
+	fn into_response(self) -> Response {
+		(StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
+	}
+}
+
+impl<E: Into<anyhow::Error>> From<E> for Error {
+	fn from(err: E) -> Self {
+		Self(err.into())
+	}
 }
