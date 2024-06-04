@@ -217,6 +217,7 @@ pub struct User {
 	pub resonite_name: String,
 
 	/// Date/time the user was created
+	#[serde(with = "time::serde::iso8601")]
 	pub created_at: OffsetDateTime,
 }
 
@@ -233,6 +234,7 @@ pub struct Handshake {
 	pub world_name: Option<String>,
 
 	/// Date/time the handshake took place
+	#[serde(with = "time::serde::iso8601")]
 	pub created_at: OffsetDateTime,
 }
 
