@@ -7,6 +7,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use secrecy::Secret;
 use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod api;
 pub mod db;
@@ -60,7 +61,11 @@ impl Config {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	tracing_subscriber::fmt().init();
+	tracing_subscriber::registry()
+		.with(tracing_subscriber::fmt::layer())
+		.with(EnvFilter::from_default_env())
+		.init();
+
 	info!("Starting Shaker server");
 	let cfg = Config::load()?;
 
