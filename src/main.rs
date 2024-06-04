@@ -63,7 +63,11 @@ impl Config {
 async fn main() -> Result<()> {
 	tracing_subscriber::registry()
 		.with(tracing_subscriber::fmt::layer())
-		.with(EnvFilter::from_default_env())
+		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+			"warn,shaker=info"
+				.parse()
+				.expect("Unable to parse default EnvFilter string")
+		}))
 		.init();
 
 	info!("Starting Shaker server");
