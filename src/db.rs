@@ -109,6 +109,21 @@ impl Database {
 			.with_context(|| format!("Unable to retrieve newly-created user with ID {id}"))
 	}
 
+	/// Stores a new legacy (username-only) user
+	#[tracing::instrument("Creating legacy user", level = "info", skip(self))]
+	pub async fn create_legacy_user(&self, name: &str) -> Result<User> {
+		// Create the user record
+		let id = sqlx::query!("INSERT INTO users (resonite_name) VALUES (?1)", name)
+			.execute(&self.pool)
+			.await?
+			.last_insert_rowid();
+
+		// Return the newly-created record
+		self.get_user(id)
+			.await?
+			.with_context(|| format!("Unable to retrieve newly-created user with ID {id}"))
+	}
+
 	/// Updates an existing user record
 	#[tracing::instrument("Updating user", level = "info", skip(self))]
 	pub async fn update_user(&self, user: &User) -> Result<bool> {
@@ -178,6 +193,21 @@ impl Database {
 		.execute(&self.pool)
 		.await?
 		.last_insert_rowid();
+
+		// Return the newly-created record
+		self.get_handshake(id)
+			.await?
+			.with_context(|| format!("Unable to retrieve newly-created handshake with ID {id}"))
+	}
+
+	/// Stores a new legacy (user-only) handshake
+	#[tracing::instrument("Creating legacy handshake", level = "info", skip(self))]
+	pub async fn create_legacy_handshake(&self, user_id: i64) -> Result<Handshake> {
+		// Create the handshake record
+		let id = sqlx::query!("INSERT INTO handshakes (user_id) VALUES (?1)", user_id)
+			.execute(&self.pool)
+			.await?
+			.last_insert_rowid();
 
 		// Return the newly-created record
 		self.get_handshake(id)

@@ -1,12 +1,16 @@
 #![warn(clippy::pedantic)]
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+	net::SocketAddr,
+	path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use dotenv::dotenv;
 use secrecy::Secret;
-use tracing::info;
+use tokio::fs;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod api;
@@ -28,6 +32,10 @@ pub struct Config {
 	/// Token required to make requests
 	#[arg(long, short, env("SHAKER_TOKEN"))]
 	pub token: Option<Secret<String>>,
+
+	/// Path to a plain-text file to import line-separated usernames of past handshakes from
+	#[arg(long, env("SHAKER_IMPORT"))]
+	pub import: Option<PathBuf>,
 }
 
 impl Config {
@@ -61,6 +69,7 @@ impl Config {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+	// Set up the tracing subscriber
 	tracing_subscriber::registry()
 		.with(tracing_subscriber::fmt::layer())
 		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -70,6 +79,7 @@ async fn main() -> Result<()> {
 		}))
 		.init();
 
+	// Load the config
 	info!("Starting Shaker server");
 	let cfg = Config::load()?;
 
@@ -81,8 +91,36 @@ async fn main() -> Result<()> {
 	let db = db::Database::open(&db_url).await?;
 	db.migrate().await?;
 
+	// Run a legacy import if necessary
+	if let Some(path) = &cfg.import {
+		import(path, &db).await?;
+		return Ok(());
+	}
+
 	// Run the API server
 	api::run(cfg, db).await?;
+
+	Ok(())
+}
+
+/// Imports legacy handshake data from a file
+#[tracing::instrument("Importing legacy handshakes", level = "info", skip(db))]
+async fn import(path: &Path, db: &db::Database) -> Result<()> {
+	let content = fs::read_to_string(path).await?;
+
+	for name in content.lines() {
+		match db.create_legacy_user(name).await {
+			Ok(user) => {
+				if let Err(err) = db.create_legacy_handshake(user.id).await {
+					error!(
+						"Unable to create legacy handshake for user {name} (ID {}): {err}",
+						user.id
+					);
+				}
+			}
+			Err(err) => error!("Unable to import legacy user {name}: {err}"),
+		}
+	}
 
 	Ok(())
 }
