@@ -11,12 +11,12 @@ use dotenv::dotenv;
 use secrecy::Secret;
 use tokio::fs;
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_forest::{traits::*, util::EnvFilter};
 
 pub mod api;
 pub mod db;
 
-/// Configuration for the server
+/// Configuration for the Shaker server
 #[derive(Debug, Parser)]
 #[command(version)]
 pub struct Config {
@@ -36,6 +36,10 @@ pub struct Config {
 	/// Path to a plain-text file to import line-separated usernames of past handshakes from
 	#[arg(long, env("SHAKER_IMPORT"))]
 	pub import: Option<PathBuf>,
+
+	/// Path to the dotenv file (if one was used)
+	#[arg(skip)]
+	pub dotenv: Option<dotenv::Result<PathBuf>>,
 }
 
 impl Config {
@@ -43,45 +47,30 @@ impl Config {
 	/// - CLI arguments
 	/// - `.env` file
 	/// - Environment variables
-	#[tracing::instrument("Loading configuration", level = "info")]
-	pub fn load() -> Result<Self> {
-		// Parse a .env file (if available) into true environment variables
-		dotenv()
-			.map(|path| {
-				info!(path = %path.display(), "Processed .env file");
-			})
-			.or_else(|err| {
-				if err.not_found() {
-					info!("No .env file to load");
-					Ok(())
-				} else {
-					Err(err)
-				}
-			})?;
+	#[must_use]
+	pub fn load() -> Self {
+		let dotenv = dotenv();
+		let mut cfg = Self::parse();
+		cfg.dotenv = Some(dotenv);
+		cfg
+	}
 
-		// Run the clap parser
-		let cfg = Self::parse();
-		info!(config = ?cfg, "Done loading");
-
-		Ok(cfg)
+	/// Emits trace events for information about any dotenv file used
+	fn emit_dotenv_info(&self) {
+		if let Some(dotenv) = &self.dotenv {
+			match dotenv {
+				Ok(file) => info!("Parsed environment variables from {}", file.display()),
+				Err(err) if err.not_found() => {}
+				Err(err) => error!("Error loading .env file: {err}"),
+			}
+		}
 	}
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-	// Set up the tracing subscriber
-	tracing_subscriber::registry()
-		.with(tracing_subscriber::fmt::layer())
-		.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-			"warn,shaker=info"
-				.parse()
-				.expect("Unable to parse default EnvFilter string")
-		}))
-		.init();
-
-	// Load the config
+/// Initialize the app
+async fn init(cfg: Config) -> Result<()> {
 	info!("Starting Shaker server");
-	let cfg = Config::load()?;
+	cfg.emit_dotenv_info();
 
 	// Open the database and run pending migrations
 	let db_url = format!(
@@ -91,7 +80,7 @@ async fn main() -> Result<()> {
 	let db = db::Database::open(&db_url).await?;
 	db.migrate().await?;
 
-	// Run a legacy import if necessary
+	// Run a legacy import if requested
 	if let Some(path) = &cfg.import {
 		import(path, &db).await?;
 		return Ok(());
@@ -123,4 +112,20 @@ async fn import(path: &Path, db: &db::Database) -> Result<()> {
 	}
 
 	Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+	let cfg = Config::load();
+
+	tracing_forest::worker_task()
+		.build_on(move |subscriber| {
+			subscriber.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+				"warn,shaker=info"
+					.parse()
+					.expect("Unable to parse default EnvFilter string")
+			}))
+		})
+		.on(init(cfg))
+		.await
 }
