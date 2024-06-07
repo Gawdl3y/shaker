@@ -9,14 +9,15 @@ use axum::{
 };
 use secrecy::{ExposeSecret, Secret};
 use serde::Deserialize;
-use tokio::net::TcpListener;
-use tracing::warn;
+use tokio::{net::TcpListener, signal};
+use tracing::{info, warn};
 
 use crate::{db, Config};
 
 /// Runs the API server
-#[tracing::instrument("Running API server", level = "info")]
 pub async fn run(cfg: Config, db: db::Database) -> Result<()> {
+	info!("Running API server");
+
 	if cfg.token.is_none() {
 		warn!("No token provided in configuration - requests will not be required to provide a token to authenticate");
 	}
@@ -30,7 +31,9 @@ pub async fn run(cfg: Config, db: db::Database) -> Result<()> {
 		.with_state(AppState { token: cfg.token, db });
 
 	let listener = TcpListener::bind(cfg.api).await?;
-	axum::serve(listener, app).await?;
+	axum::serve(listener, app)
+		.with_graceful_shutdown(shutdown_signal())
+		.await?;
 
 	Ok(())
 }
@@ -143,5 +146,28 @@ impl IntoResponse for Error {
 impl<E: Into<anyhow::Error>> From<E> for Error {
 	fn from(err: E) -> Self {
 		Self::Internal(err.into())
+	}
+}
+
+/// Returns a future that waits for Ctrl + C or a terminate signal
+async fn shutdown_signal() {
+	let ctrl_c = async {
+		signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+	};
+
+	#[cfg(unix)]
+	let terminate = async {
+		signal::unix::signal(signal::unix::SignalKind::terminate())
+			.expect("failed to install signal handler")
+			.recv()
+			.await;
+	};
+
+	#[cfg(not(unix))]
+	let terminate = std::future::pending::<()>();
+
+	tokio::select! {
+		() = ctrl_c => {},
+		() = terminate => {},
 	}
 }

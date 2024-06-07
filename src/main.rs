@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::missing_errors_doc)]
 
 use std::{
 	net::SocketAddr,
@@ -119,7 +120,7 @@ async fn main() -> Result<()> {
 	let cfg = Config::load();
 
 	tracing_forest::worker_task()
-		.build_on(move |subscriber| {
+		.build_on(|subscriber| {
 			subscriber.with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
 				"warn,shaker=info"
 					.parse()
