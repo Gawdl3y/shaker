@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT resonite_name FROM users",
+  "describe": {
+    "columns": [
+      {
+        "name": "resonite_name",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "008cb739696b1256eeeb97507545b19c3d396a5088d11f7e37f05da772e67bd0"
+}

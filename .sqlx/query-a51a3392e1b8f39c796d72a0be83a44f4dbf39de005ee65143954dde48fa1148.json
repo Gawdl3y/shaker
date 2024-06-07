@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE users SET resonite_id = ?2, resonite_name = ?3 WHERE id = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a51a3392e1b8f39c796d72a0be83a44f4dbf39de005ee65143954dde48fa1148"
+}

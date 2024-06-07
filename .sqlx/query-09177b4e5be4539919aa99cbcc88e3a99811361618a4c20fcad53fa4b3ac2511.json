@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO handshakes (user_id, world_name) VALUES (?1, ?2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "09177b4e5be4539919aa99cbcc88e3a99811361618a4c20fcad53fa4b3ac2511"
+}
